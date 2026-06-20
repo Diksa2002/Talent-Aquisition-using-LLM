@@ -1,0 +1,6 @@
+streamlit
+pymongo
+pdfplumber
+requests
+numpy
+sentence-transformers
