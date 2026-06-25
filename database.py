@@ -12,8 +12,19 @@ class TalentDB:
         self.candidates_col = self.db["candidates"]
         
     def seed_roles(self, json_path=config.JOB_ROLE_JSON_PATH):
-        """Seeds the job roles from job_role.json if the collection is empty."""
+        """Seeds the job roles from job_role.json if the collection is empty, and adds vector embeddings."""
         try:
+            import matcher
+            
+            # Helper to generate embedding text
+            def get_role_text(role):
+                role_name = role.get("job_role", "")
+                desc = role.get("job_description", "")
+                skills_list = role.get("skills", [])
+                skills_str = ", ".join([s.get("skill_name", "") for s in skills_list])
+                return f"Job Role: {role_name}\nDescription: {desc}\nSkills: {skills_str}"
+            
+            # Case 1: Collection is empty, seed from scratch
             if self.roles_col.count_documents({}) == 0:
                 if not os.path.exists(json_path):
                     print(f"Error: Job role definition file not found at {json_path}")
@@ -21,16 +32,36 @@ class TalentDB:
                 with open(json_path, 'r', encoding='utf-8') as f:
                     roles = json.load(f)
                 
-                # Make sure the roles structure is valid
                 if roles and isinstance(roles, list):
+                    # Compute embeddings before inserting
+                    model = matcher.load_bert_model()
+                    if model is not None:
+                        for role in roles:
+                            role_text = get_role_text(role)
+                            role["embedding"] = model.encode(role_text).tolist()
                     self.roles_col.insert_many(roles)
-                    print(f"Successfully seeded {len(roles)} job roles into the database.")
+                    print(f"Successfully seeded {len(roles)} job roles with vector embeddings into the database.")
                     return True
             else:
-                print("Job roles collection is already seeded.")
+                # Case 2: Collection is not empty, check if any roles are missing embeddings
+                missing_emb_count = self.roles_col.count_documents({"embedding": {"$exists": False}})
+                if missing_emb_count > 0:
+                    print(f"Found {missing_emb_count} job roles without vector embeddings. Generating them now...")
+                    model = matcher.load_bert_model()
+                    if model is not None:
+                        for role in self.roles_col.find({"embedding": {"$exists": False}}):
+                            role_text = get_role_text(role)
+                            embedding = model.encode(role_text).tolist()
+                            self.roles_col.update_one(
+                                {"_id": role["_id"]},
+                                {"$set": {"embedding": embedding}}
+                            )
+                        print(f"Successfully updated all job roles with vector embeddings.")
+                else:
+                    print("Job roles collection is already seeded with vector embeddings.")
                 return True
         except Exception as e:
-            print(f"Error during job roles seeding: {str(e)}")
+            print(f"Error during job roles seeding/embedding: {str(e)}")
             return False
             
     def get_all_roles(self):
@@ -41,9 +72,9 @@ class TalentDB:
         """Returns a job role by its name."""
         return self.roles_col.find_one({"job_role": role_name})
         
-    def create_candidate(self, parsed_profile, resume_text):
+    def create_candidate(self, parsed_profile, resume_text, resume_embedding=None):
         """
-        Creates a new candidate record with parsed details and raw text.
+        Creates a new candidate record with parsed details, raw text, and its vector embedding.
         Returns the inserted candidate's ID as a string.
         """
         candidate_doc = {
@@ -58,6 +89,7 @@ class TalentDB:
             "projects": parsed_profile.get("projects", []),
             "years_of_experience": float(parsed_profile.get("years_of_experience") or 0.0),
             "resume_text": resume_text,
+            "resume_embedding": resume_embedding,
             "selected_role": None,
             "interview_status": "PENDING",
             "qas": [],
