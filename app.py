@@ -129,7 +129,7 @@ if "selected_model" not in st.session_state:
     st.session_state.selected_model = None
 
 # Initialize database
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def get_db():
     db = TalentDB()
     db.seed_roles()
@@ -139,8 +139,29 @@ db = get_db()
 
 # Sidebar: Configuration, status & navigation
 with st.sidebar:
-    st.image("https://img.icons8.com/isometric/100/null/artificial-intelligence.png", width=60)
-    st.markdown("### Talent AI Controller")
+    # Render a beautiful inline SVG logo instead of a broken external image
+    st.markdown("""
+    <div style="text-align: left; margin-bottom: 10px;">
+        <svg width="55" height="55" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+                <linearGradient id="iconGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stop-color="#6366f1" />
+                    <stop offset="100%" stop-color="#a855f7" />
+                </linearGradient>
+            </defs>
+            <rect width="24" height="24" rx="5" fill="url(#iconGrad)"/>
+            <path d="M7 9C7 8.44772 7.44772 8 8 8H16C16.5523 8 17 8.44772 17 9V15C17 15.5523 16.5523 16 16 16H8C7.44772 16 7 15.5523 7 15V9Z" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+            <path d="M12 8V6" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+            <circle cx="12" cy="5" r="1" fill="white"/>
+            <circle cx="10" cy="11" r="1" fill="white"/>
+            <circle cx="14" cy="11" r="1" fill="white"/>
+            <path d="M10 13.5H14" stroke="white" stroke-width="1" stroke-linecap="round"/>
+            <rect x="5.5" y="10.5" width="1.5" height="3" rx="0.5" fill="white"/>
+            <rect x="17" y="10.5" width="1.5" height="3" rx="0.5" fill="white"/>
+        </svg>
+    </div>
+    """, unsafe_allow_html=True)
+    st.markdown("## AI Talent Controller")
     st.markdown("---")
     
     # Model Selection from running instances
@@ -164,7 +185,7 @@ with st.sidebar:
         ("SELECT_ROLE", "Select Job Role"),
         ("INTERVIEW", "LLM Technical Interview"),
         ("PREF_FORM", "Submit Preferences"),
-        ("REPORT", "Evaluation Report")
+        ("REPORT", "Thank You")
     ]
     
     current_step_idx = next(i for i, (s, _) in enumerate(steps) if s == st.session_state.step)
@@ -220,37 +241,36 @@ if st.session_state.step == "UPLOAD":
                             tmp_path = tmp.name
                             
                         try:
-                            # 1. Extract text and parse profile details
-                            raw_text, parsed_profile = parser.process_resume(
-                                tmp_path, 
-                                file_ext, 
-                                model_name=st.session_state.selected_model
-                            )
-                            
-                            # Clean temp file
-                            os.unlink(tmp_path)
-                            
-                            st.session_state.parsed_profile = parsed_profile
-                            
-                            # 2. Match with jobs in database using BERT/Cosine similarity
+                            # 1. Fetch all job roles from database
                             all_roles = db.get_all_roles()
                             
                             # Make sure roles exist
                             if not all_roles:
                                 st.error("No job roles found in database. Seed job_role.json first.")
+                                os.unlink(tmp_path)
                             else:
-                                with st.spinner("Calculating semantic match with job roles..."):
-                                    candidate_skills = parsed_profile.get("skills", [])
-                                    recommended = matcher.recommend_roles(candidate_skills, all_roles)
-                                    st.session_state.recommended_roles = recommended
-                                    
-                                    # 3. Create candidate entry in MongoDB
-                                    cand_id = db.create_candidate(parsed_profile, raw_text)
-                                    st.session_state.candidate_id = cand_id
-                                    
-                                    # Transition to role selection
-                                    st.session_state.step = "SELECT_ROLE"
-                                    st.rerun()
+                                # 2. Extract text, parse details & match jobs via Hybrid Vector Reranking
+                                with st.spinner("Extracting candidate profile and calculating job role recommendations..."):
+                                    raw_text, resume_embedding, parsed_profile, recommended = parser.process_resume_hybrid_rerank(
+                                        tmp_path, 
+                                        file_ext, 
+                                        all_roles,
+                                        model_name=st.session_state.selected_model
+                                    )
+                                
+                                # Clean temp file
+                                os.unlink(tmp_path)
+                                
+                                st.session_state.parsed_profile = parsed_profile
+                                st.session_state.recommended_roles = recommended
+                                
+                                # 3. Create candidate entry in MongoDB (including resume text and vector embedding)
+                                cand_id = db.create_candidate(parsed_profile, raw_text, resume_embedding=resume_embedding)
+                                st.session_state.candidate_id = cand_id
+                                
+                                # Transition to role selection
+                                st.session_state.step = "SELECT_ROLE"
+                                st.rerun()
                         except Exception as e:
                             st.error(f"Error processing resume: {str(e)}")
                             if os.path.exists(tmp_path):
@@ -448,83 +468,21 @@ elif st.session_state.step == "PREF_FORM":
                 st.session_state.step = "REPORT"
                 st.rerun()
 
-# ----------------- STEP 5: EVALUATION REPORT -----------------
 elif st.session_state.step == "REPORT":
-    st.markdown('<div class="main-title">Candidate Evaluation Report</div>', unsafe_allow_html=True)
-    st.markdown('<div class="subtitle">The complete interview profile has been compiled and safely recorded in MongoDB.</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div style="text-align: center; padding: 50px 20px; background: rgba(30, 41, 59, 0.45); backdrop-filter: blur(8px); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.08); max-width: 800px; margin: 40px auto;">
+        <h1 style="color: #22c55e; font-size: 2.8rem; margin-bottom: 20px; font-weight: 800;">🎉 Thank You!</h1>
+        <h3 style="color: #cbd5e1; font-weight: 500; margin-bottom: 25px;">Your interview has been completed and submitted successfully.</h3>
+        <p style="color: #94a3b8; font-size: 1.05rem; line-height: 1.6; margin-bottom: 35px;">
+            We have safely recorded your profile, preferences, and interview transcript in our database. 
+            Our recruitment team will review your assessment shortly and get in touch with you regarding the next steps in our hiring process.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
     
-    # Retrieve current candidate profile & evaluation details from DB
-    candidate = db.get_candidate(st.session_state.candidate_id)
-    eval_report = candidate.get("evaluation", {})
-    personal = candidate.get("personal_info", {})
-    prefs = candidate.get("preferences", {})
-    
-    col1, col2 = st.columns([1, 2])
-    
-    with col1:
-        st.subheader("Summary Card")
-        
-        # Grading and decision badges
-        rec = eval_report.get("recommendation", "Hire")
-        rec_color = "#22c55e" if "strong" in rec.lower() or "hire" in rec.lower() and "no" not in rec.lower() else "#ef4444"
-        
-        st.markdown(f"""
-        <div style="background: rgba(30, 41, 59, 0.5); padding: 20px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1);">
-            <h3 style="margin-top:0;">{personal.get('name', 'Candidate')}</h3>
-            <p><b>Role Applied:</b> {candidate.get('selected_role')}</p>
-            <p><b>Decision Recommendation:</b> <span style="color: {rec_color}; font-weight: 700;">{rec}</span></p>
-            <hr style="border-color: rgba(255,255,255,0.1);"/>
-            <h4>Overall Assessment Scores</h4>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                <span>Technical Score:</span>
-                <b>{eval_report.get('technical_score', 0.0)}%</b>
-            </div>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                <span>Soft Skills Score:</span>
-                <b>{eval_report.get('soft_skills_score', 0.0)}%</b>
-            </div>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 1.1rem; color: #818cf8;">
-                <span>Final Match Rating:</span>
-                <b>{eval_report.get('final_score', 0.0)}%</b>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        st.write("")
-        st.subheader("Declared Preferences")
-        st.markdown(f"""
-        - **Salary Expectation**: {prefs.get('salary_expectation')}
-        - **Relocation**: {prefs.get('relocation_ok')}
-        - **WFH Preference**: {prefs.get('wfh_preference')}
-        - **Current Location**: {prefs.get('current_location')}
-        """)
-        
+    col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
-        st.subheader("Evaluation Details")
-        
-        with st.expander("📝 Executive Strengths & Gaps Summaries", expanded=True):
-            st.markdown(f"**Technical Capabilities Summary:**\n{eval_report.get('technical_summary', '')}")
-            st.write("")
-            st.markdown(f"**Communication & Soft Skills Summary:**\n{eval_report.get('soft_skill_summary', '')}")
-            
-        st.subheader("Transcript Breakdown & Question Scores")
-        
-        detailed_feedback = eval_report.get("detailed_feedback", [])
-        
-        for item in detailed_feedback:
-            q_num = item.get("question_number", 0)
-            question = item.get("question", "")
-            answer = item.get("answer", "")
-            score = item.get("score", 0.0)
-            feedback = item.get("feedback", "")
-            
-            with st.expander(f"Question {q_num}: {question[:80]}... - Score: {score}%", expanded=False):
-                st.markdown(f"**Question:** {question}")
-                st.markdown(f"**Candidate Answer:** *{answer}*")
-                st.markdown(f"**Score:** `{score}%`")
-                st.markdown(f"**AI Assessor Feedback:** {feedback}")
-                
-        if st.button("Start New Assessment", type="primary"):
+        if st.button("Start New Application", type="primary", use_container_width=True):
             # Reset session states
             for key in ["step", "candidate_id", "parsed_profile", "recommended_roles", "selected_role", "interview_qas", "current_question"]:
                 if key in st.session_state:
