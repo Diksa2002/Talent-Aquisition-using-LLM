@@ -6,8 +6,18 @@ import parser
 import matcher
 import interview
 import llm_client
+import base64
+import io
+import requests
+import json
+from datetime import datetime
+import streamlit.components.v1 as components
+from streamlit_mic_recorder import mic_recorder
 
-# Page configuration
+# =====================================================
+# PAGE CONFIGURATION
+# =====================================================
+
 st.set_page_config(
     page_title="Talent AI - LLM Talent Acquisition",
     page_icon="💼",
@@ -15,18 +25,19 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for modern design and aesthetics
+# =====================================================
+# CUSTOM CSS
+# =====================================================
+
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
 
-/* Typography & Base styles */
 html, body, [class*="css"] {
     font-family: 'Plus Jakarta Sans', sans-serif;
     font-size: 14px !important;
 }
 
-/* Custom card style */
 .role-card {
     background: rgba(30, 41, 59, 0.45);
     backdrop-filter: blur(8px);
@@ -43,7 +54,6 @@ html, body, [class*="css"] {
     box-shadow: 0 10px 25px rgba(99, 102, 241, 0.15);
 }
 
-/* Gradient headings */
 .main-title {
     background: linear-gradient(135deg, #6366f1, #a855f7);
     -webkit-background-clip: text;
@@ -59,7 +69,6 @@ html, body, [class*="css"] {
     margin-bottom: 2rem;
 }
 
-/* Score Pill */
 .score-badge {
     background: linear-gradient(135deg, #3b82f6, #1d4ed8);
     color: white;
@@ -69,7 +78,6 @@ html, body, [class*="css"] {
     font-weight: 600;
 }
 
-/* Steps Indicator */
 .step-container {
     padding: 10px 15px;
     border-radius: 8px;
@@ -87,7 +95,6 @@ html, body, [class*="css"] {
     border-left-color: #22c55e;
 }
 
-/* Custom chat bubble layout */
 .chat-bubble {
     padding: 12px 16px;
     border-radius: 12px;
@@ -110,7 +117,151 @@ html, body, [class*="css"] {
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize Session States
+# =====================================================
+# SARVAM SPEECH-TO-TEXT INTEGRATION (NEW)
+# =====================================================
+
+def sarvam_speech_to_text(audio_bytes: bytes) -> str:
+    """
+    Convert speech audio to text using Sarvam's speech-to-text API.
+    Supports Hindi, Bengali, and mixed language.
+    """
+    try:
+        api_key = st.secrets.get("SARVAM_API_KEY", "")
+        if not api_key:
+            st.warning("⚠️ Sarvam API key missing. Using Google STT fallback.")
+            return google_speech_to_text(audio_bytes)
+        
+        # Check audio size
+        if len(audio_bytes) < 1000:
+            st.warning("Audio too short. Please speak longer.")
+            return ""
+        
+        # Sarvam expects WAV format
+        headers = {
+            "api-subscription-key": api_key,
+        }
+        
+        files = {
+            "file": ("audio.wav", audio_bytes, "audio/wav")
+        }
+        
+        data = {
+            "language_code": "auto",  # Auto-detects Hindi/Bengali
+            "model": "saarika-v2",
+            "with_diarization": "false"
+        }
+        
+        response = requests.post(
+            "https://api.sarvam.ai/speech-to-text",
+            headers=headers,
+            files=files,
+            data=data,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            transcript = result.get("transcript", "")
+            if transcript:
+                return transcript.strip()
+            else:
+                st.warning("No speech detected. Please try again.")
+                return ""
+        else:
+            print(f"Sarvam STT error: {response.status_code}")
+            # Fallback to Google STT
+            return google_speech_to_text(audio_bytes)
+            
+    except Exception as e:
+        print(f"Sarvam STT error: {e}")
+        # Fallback to Google STT
+        return google_speech_to_text(audio_bytes)
+
+def google_speech_to_text(audio_bytes: bytes) -> str:
+    """
+    Fallback: Google Speech Recognition
+    """
+    try:
+        import speech_recognition as sr
+        
+        recognizer = sr.Recognizer()
+        with sr.AudioFile(io.BytesIO(audio_bytes)) as source:
+            audio_data = recognizer.record(source)
+            text = recognizer.recognize_google(audio_data)
+            return text
+    except sr.UnknownValueError:
+        st.error("Could not understand audio. Please try again.")
+        return ""
+    except sr.RequestError as e:
+        st.error(f"Speech recognition service error: {e}")
+        return ""
+    except Exception as e:
+        st.error(f"Error transcribing audio: {e}")
+        return ""
+
+# =====================================================
+# COMPRESS WAV AUDIO (Reduces payload size)
+# =====================================================
+
+def compress_wav(wav_bytes):
+    try:
+        import wave
+        import audioop
+        
+        in_io = io.BytesIO(wav_bytes)
+        with wave.open(in_io, 'rb') as wav_in:
+            params = wav_in.getparams()
+            nchannels, sampwidth, framerate, nframes = params[:4]
+            raw_frames = wav_in.readframes(nframes)
+            
+        # Convert to mono if stereo
+        if nchannels > 1:
+            raw_frames = audioop.tomono(raw_frames, sampwidth, 1, 1)
+            nchannels = 1
+            
+        # Downsample to 16000 Hz
+        target_rate = 16000
+        if framerate != target_rate:
+            raw_frames, _ = audioop.ratecv(raw_frames, sampwidth, nchannels, framerate, target_rate, None)
+            framerate = target_rate
+            
+        out_io = io.BytesIO()
+        with wave.open(out_io, 'wb') as wav_out:
+            wav_out.setnchannels(nchannels)
+            wav_out.setsampwidth(sampwidth)
+            wav_out.setframerate(framerate)
+            wav_out.writeframes(raw_frames)
+            
+        return out_io.getvalue()
+    except Exception as e:
+        print(f"Error compressing WAV: {e}")
+        return wav_bytes
+
+# =====================================================
+# TEXT-TO-SPEECH (Voice Reader)
+# =====================================================
+
+def trigger_tts(text):
+    if text:
+        clean_text = text.replace('"', '\\"').replace("'", "\\'").replace('\n', ' ')
+        js_code = f"""
+        <script>
+            if ('speechSynthesis' in window) {{
+                window.speechSynthesis.cancel();
+                var utterance = new SpeechSynthesisUtterance("{clean_text}");
+                utterance.rate = 1.0;
+                utterance.pitch = 1.0;
+                window.speechSynthesis.speak(utterance);
+            }}
+        </script>
+        """
+        components.html(js_code, height=0)
+
+# =====================================================
+# INITIALIZE SESSION STATE
+# =====================================================
+
 if "step" not in st.session_state:
     st.session_state.step = "UPLOAD"
 if "candidate_id" not in st.session_state:
@@ -127,17 +278,35 @@ if "current_question" not in st.session_state:
     st.session_state.current_question = ""
 if "selected_model" not in st.session_state:
     st.session_state.selected_model = None
+if "candidate_answer" not in st.session_state:
+    st.session_state.candidate_answer = ""
+if "last_spoken_question" not in st.session_state:
+    st.session_state.last_spoken_question = ""
+if "voice_enabled" not in st.session_state:
+    st.session_state.voice_enabled = True
+if "current_audio_b64" not in st.session_state:
+    st.session_state.current_audio_b64 = None
+if "use_sarvam_stt" not in st.session_state:
+    st.session_state.use_sarvam_stt = True  # NEW: Sarvam STT toggle
+
+# =====================================================
+# INITIALIZE DATABASE
+# =====================================================
 
 # Initialize database
 @st.cache_resource(show_spinner=False)
 def get_db():
+    from database import TalentDB
     db = TalentDB()
     db.seed_roles()
     return db
 
 db = get_db()
 
-# Sidebar: Configuration, status & navigation
+# =====================================================
+# SIDEBAR
+# =====================================================
+
 with st.sidebar:
     # Render a beautiful inline SVG logo instead of a broken external image
     st.markdown("""
@@ -164,7 +333,6 @@ with st.sidebar:
     st.markdown("## AI Talent Controller")
     st.markdown("---")
     
-    # Model Selection from running instances
     st.markdown("#### LLM Model Settings")
     available_models = llm_client.get_available_models()
     import config
@@ -177,9 +345,34 @@ with st.sidebar:
     st.session_state.selected_model = selected_model
     
     st.markdown("---")
+    st.markdown("#### Voice Settings")
+    
+    # Voice Reader Toggle
+    voice_enabled = st.checkbox(
+        "🔊 AI Voice Reader",
+        value=st.session_state.voice_enabled,
+        help="Automatically read out interview questions."
+    )
+    st.session_state.voice_enabled = voice_enabled
+    
+    # NEW: Sarvam vs Google STT Toggle
+    use_sarvam = st.checkbox(
+        "🎤 Use Sarvam STT (Hindi/Bengali)",
+        value=st.session_state.use_sarvam_stt,
+        help="Sarvam supports Hindi/Bengali. Google STT is fallback."
+    )
+    st.session_state.use_sarvam_stt = use_sarvam
+    
+    # Show Sarvam API status
+    api_key = st.secrets.get("SARVAM_API_KEY", "")
+    if api_key:
+        st.caption("✅ Sarvam API: Connected")
+    else:
+        st.caption("⚠️ Sarvam API: Key missing (using Google STT)")
+    
+    st.markdown("---")
     st.markdown("#### Process Progress")
     
-    # Render steps dynamically based on state
     steps = [
         ("UPLOAD", "Upload Resume"),
         ("SELECT_ROLE", "Select Job Role"),
@@ -192,18 +385,14 @@ with st.sidebar:
     
     for i, (s, label) in enumerate(steps):
         if i < current_step_idx:
-            # Done
             st.markdown(f'<div class="step-container step-done">✅ <b>{label}</b></div>', unsafe_allow_html=True)
         elif i == current_step_idx:
-            # Active
             st.markdown(f'<div class="step-container step-active">⚡ <b>{label}</b></div>', unsafe_allow_html=True)
         else:
-            # Future
             st.markdown(f'<div class="step-container">⚪ {label}</div>', unsafe_allow_html=True)
             
     st.markdown("---")
     
-    # Database status
     try:
         db.client.admin.command('ping')
         db_status = "💚 Connected"
@@ -211,7 +400,10 @@ with st.sidebar:
         db_status = "❤️ Disconnected"
     st.metric("MongoDB Status", db_status)
 
-# ----------------- STEP 1: UPLOAD RESUME -----------------
+# =====================================================
+# STEP 1: UPLOAD RESUME
+# =====================================================
+
 if st.session_state.step == "UPLOAD":
     st.markdown('<div class="main-title">Talent Acquisition Platform</div>', unsafe_allow_html=True)
     st.markdown('<div class="subtitle">Upload your resume to parse skills, match matching roles, and begin a dynamic interview.</div>', unsafe_allow_html=True)
@@ -227,14 +419,12 @@ if st.session_state.step == "UPLOAD":
         )
         
         if uploaded_file is not None:
-            # Enforce 10MB limit
             file_size_mb = len(uploaded_file.getvalue()) / (1024 * 1024)
             if file_size_mb > 10.0:
                 st.error("File exceeds the 10MB size limit. Please upload a smaller file.")
             else:
                 if st.button("Process & Match Roles", type="primary"):
                     with st.spinner("Reading resume contents and extracting skills..."):
-                        # Save temporarily
                         file_ext = uploaded_file.name.split(".")[-1]
                         with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_ext}") as tmp:
                             tmp.write(uploaded_file.getvalue())
@@ -244,7 +434,6 @@ if st.session_state.step == "UPLOAD":
                             # 1. Fetch all job roles from database
                             all_roles = db.get_all_roles()
                             
-                            # Make sure roles exist
                             if not all_roles:
                                 st.error("No job roles found in database. Seed job_role.json first.")
                                 os.unlink(tmp_path)
@@ -279,13 +468,23 @@ if st.session_state.step == "UPLOAD":
     with col2:
         st.markdown("""
         ### How it works
-        1. **Resume Processing**: We parse clean text using `pdfplumber` and identify candidate name, email, experience, and key technical skills.
-        2. **Semantic Matching**: Candidate skills are matched against database job roles using **BERT Sentence Embeddings**. High-importance skills carry higher weights.
-        3. **LLM Technical Interview**: The AI conducts a 5-question technical interview tailored dynamically to your profile.
-        4. **Detailed Report**: A full scoring breakdown is saved to MongoDB.
+        1. **Resume Processing**: Parse clean text using `pdfplumber` and identify skills.
+        2. **Semantic Matching**: Match skills against job roles using BERT embeddings.
+        3. **LLM Interview**: 5-question technical interview with voice support.
+        4. **Voice Input**: Speak answers in Hindi/Bengali/English (Sarvam STT).
+        """)
+        st.markdown("---")
+        st.markdown("""
+        ### 🎤 Voice Features
+        - **Speak your answers** using microphone
+        - **Hindi, Bengali, English** supported
+        - **Auto-read questions** with TTS
         """)
 
-# ----------------- STEP 2: SELECT ROLE -----------------
+# =====================================================
+# STEP 2: SELECT ROLE
+# =====================================================
+
 elif st.session_state.step == "SELECT_ROLE":
     st.markdown('<div class="main-title">Select Job Role</div>', unsafe_allow_html=True)
     st.markdown('<div class="subtitle">Review your parsed profile details and choose which job role to interview for.</div>', unsafe_allow_html=True)
@@ -329,11 +528,9 @@ elif st.session_state.step == "SELECT_ROLE":
                 """, unsafe_allow_html=True)
                 
                 if st.button(f"Apply & Start Interview - {role_name}", key=f"btn_{idx}"):
-                    # Update database with chosen role
                     db.update_candidate_role(st.session_state.candidate_id, role_name)
                     st.session_state.selected_role = role_name
                     
-                    # Generate the first interview question
                     with st.spinner("Generating your first question..."):
                         first_q = interview.generate_next_question(
                             role_name, 
@@ -344,14 +541,16 @@ elif st.session_state.step == "SELECT_ROLE":
                             model_name=st.session_state.selected_model
                         )
                         st.session_state.current_question = first_q
-                        # Save the first question in database
                         db.add_interview_qa(st.session_state.candidate_id, first_q)
                         st.session_state.interview_qas.append({"question": first_q, "answer": ""})
                         
                     st.session_state.step = "INTERVIEW"
                     st.rerun()
 
-# ----------------- STEP 3: INTERVIEW -----------------
+# =====================================================
+# STEP 3: INTERVIEW (WITH VOICE SUPPORT)
+# =====================================================
+
 elif st.session_state.step == "INTERVIEW":
     role_name = st.session_state.selected_role
     role_data = db.get_role_by_name(role_name)
@@ -360,72 +559,129 @@ elif st.session_state.step == "INTERVIEW":
     st.markdown(f'<div class="main-title">Interview: {role_name}</div>', unsafe_allow_html=True)
     st.markdown('<div class="subtitle">Answer each question professionally. Your answers determine the follow-up questions.</div>', unsafe_allow_html=True)
     
-    # Progress Bar
     q_count = len(st.session_state.interview_qas)
     progress_val = q_count / 5.0
     st.progress(progress_val, text=f"Question {q_count} of 5")
     
-    # Chat display container
+    # Voice info
+    st.caption("🎤 Speak in Hindi, Bengali, or English | Click microphone to record")
+    
     st.write("### Conversation")
     
-    # Render previous Q&As
     for i, qa in enumerate(st.session_state.interview_qas):
-        # Render Interviewer Question
         st.markdown(f"""
         <div class="chat-bubble chat-interviewer">
             <b>Interviewer (AI)</b><br/>{qa['question']}
         </div>
         """, unsafe_allow_html=True)
         
-        # Render Candidate Answer
         if qa.get("answer"):
             st.markdown(f"""
             <div class="chat-bubble chat-candidate">
                 <b>You</b><br/>{qa['answer']}
             </div>
             """, unsafe_allow_html=True)
-            
-    # Form for entering the current answer
-    # Only render input for the active question (which is the last one in the history)
+    
+    # Speak the current question if not already spoken
+    if st.session_state.voice_enabled and st.session_state.current_question and st.session_state.current_question != st.session_state.last_spoken_question:
+        trigger_tts(st.session_state.current_question)
+        st.session_state.last_spoken_question = st.session_state.current_question
+
+    # Get current answer
     last_qa = st.session_state.interview_qas[-1]
     
     if not last_qa.get("answer"):
-        with st.form("answer_form", clear_on_submit=True):
-            user_answer = st.text_area("Your Answer:", height=150, placeholder="Type your technical response here...")
-            submitted = st.form_submit_button("Submit Answer")
-            
-            if submitted:
-                if not user_answer.strip():
-                    st.warning("Please provide a response before submitting.")
-                else:
-                    # 1. Update session state and database with candidate response
-                    st.session_state.interview_qas[-1]["answer"] = user_answer
-                    db.update_last_qa_answer(st.session_state.candidate_id, user_answer)
+        if "candidate_answer" not in st.session_state:
+            st.session_state.candidate_answer = ""
+        if "current_audio_b64" not in st.session_state:
+            st.session_state.current_audio_b64 = None
+
+        st.write("🎙️ **Voice Input:**")
+        col_rec, col_speak, col_clear = st.columns([2, 2, 1])
+        
+        with col_rec:
+            # NEW: Use mic_recorder with Sarvam STT
+            audio = mic_recorder(
+                start_prompt="🎙️ Start Recording",
+                stop_prompt="⏹️ Stop & Transcribe",
+                format="wav",
+                key=f"audio_rec_{q_count}"
+            )
+            if audio:
+                audio_bytes = audio['bytes']
+                compressed_bytes = compress_wav(audio_bytes)
+                audio_b64 = base64.b64encode(compressed_bytes).decode('utf-8')
+                st.session_state.current_audio_b64 = audio_b64
+                
+                # Transcribe using Sarvam or Google
+                with st.spinner("🔄 Transcribing your voice..."):
+                    if st.session_state.use_sarvam_stt:
+                        transcription = sarvam_speech_to_text(compressed_bytes)
+                    else:
+                        transcription = google_speech_to_text(compressed_bytes)
                     
-                    # 2. Check if we need to ask another question
-                    if q_count < 5:
-                        with st.spinner("Evaluating response and formulating next question..."):
-                            next_q = interview.generate_next_question(
-                                role_name,
-                                role_desc,
-                                st.session_state.parsed_profile.get("skills", []),
-                                st.session_state.parsed_profile.get("projects", []),
-                                st.session_state.interview_qas,
-                                model_name=st.session_state.selected_model
-                            )
-                            # Save next question to database and state
-                            db.add_interview_qa(st.session_state.candidate_id, next_q)
-                            st.session_state.interview_qas.append({"question": next_q, "answer": ""})
-                            st.session_state.current_question = next_q
+                    if transcription:
+                        st.session_state.candidate_answer = transcription
+                        st.success(f"📝 Transcribed: {transcription}")
                         st.rerun()
                     else:
-                        # 5 questions finished, move to preferences collection
-                        st.session_state.step = "PREF_FORM"
-                        st.rerun()
+                        st.warning("Could not transcribe audio. Please type your answer.")
+                    
+        with col_speak:
+            if st.button("🔊 Replay Question", use_container_width=True):
+                trigger_tts(st.session_state.current_question)
+                
+        with col_clear:
+            if st.button("🗑️ Clear", use_container_width=True):
+                st.session_state.candidate_answer = ""
+                st.session_state.current_audio_b64 = None
+                st.rerun()
+
+        # Text input
+        user_answer = st.text_area(
+            "Your Answer:", 
+            value=st.session_state.candidate_answer, 
+            height=150, 
+            placeholder="Type your response here or click 'Start Recording' above to speak..."
+        )
+        
+        submitted = st.button("Submit Answer", type="primary")
+        
+        if submitted:
+            final_answer = user_answer.strip()
+            if not final_answer:
+                st.warning("Please provide a response before submitting.")
+            else:
+                st.session_state.interview_qas[-1]["answer"] = final_answer
+                db.update_last_qa_answer(st.session_state.candidate_id, final_answer, st.session_state.current_audio_b64)
+                
+                st.session_state.candidate_answer = ""
+                st.session_state.current_audio_b64 = None
+                
+                if q_count < 5:
+                    with st.spinner("Evaluating response and formulating next question..."):
+                        next_q = interview.generate_next_question(
+                            role_name,
+                            role_desc,
+                            st.session_state.parsed_profile.get("skills", []),
+                            st.session_state.parsed_profile.get("projects", []),
+                            st.session_state.interview_qas,
+                            model_name=st.session_state.selected_model
+                        )
+                        db.add_interview_qa(st.session_state.candidate_id, next_q)
+                        st.session_state.interview_qas.append({"question": next_q, "answer": ""})
+                        st.session_state.current_question = next_q
+                    st.rerun()
+                else:
+                    st.session_state.step = "PREF_FORM"
+                    st.rerun()
     else:
         st.info("Interview conversation completed. Transitioning to preferences details.")
 
-# ----------------- STEP 4: PREFERENCES FORM -----------------
+# =====================================================
+# STEP 4: PREFERENCES FORM
+# =====================================================
+
 elif st.session_state.step == "PREF_FORM":
     st.markdown('<div class="main-title">Preferences Details</div>', unsafe_allow_html=True)
     st.markdown('<div class="subtitle">Almost done! Provide your job preferences to complete the assessment.</div>', unsafe_allow_html=True)
@@ -451,10 +707,8 @@ elif st.session_state.step == "PREF_FORM":
                     "current_location": curr_loc
                 }
                 
-                # Save to MongoDB
                 db.save_preferences(st.session_state.candidate_id, preferences)
                 
-                # Trigger LLM Evaluation Report
                 with st.spinner("AI evaluating transcript and scoring your interview (may take a moment)..."):
                     evaluation = interview.evaluate_candidate(
                         st.session_state.parsed_profile.get("name", "Candidate"),
@@ -462,7 +716,6 @@ elif st.session_state.step == "PREF_FORM":
                         st.session_state.interview_qas,
                         model_name=st.session_state.selected_model
                     )
-                    # Save evaluation report to MongoDB
                     db.save_evaluation(st.session_state.candidate_id, evaluation)
                     
                 st.session_state.step = "REPORT"
@@ -484,7 +737,7 @@ elif st.session_state.step == "REPORT":
     with col2:
         if st.button("Start New Application", type="primary", use_container_width=True):
             # Reset session states
-            for key in ["step", "candidate_id", "parsed_profile", "recommended_roles", "selected_role", "interview_qas", "current_question"]:
+            for key in ["step", "candidate_id", "parsed_profile", "recommended_roles", "selected_role", "interview_qas", "current_question", "candidate_answer", "current_audio_b64", "last_spoken_question"]:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()
