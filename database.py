@@ -170,3 +170,38 @@ class TalentDB:
     def get_candidate(self, candidate_id):
         """Retrieves a candidate by ID."""
         return self.candidates_col.find_one({"_id": ObjectId(candidate_id)})
+
+    def vector_search_roles(self, query_embedding, limit=5):
+        """
+        Performs MongoDB Atlas Vector Search on the job_roles collection.
+        Raises an exception if search is not supported/configured (e.g. running on local MongoDB).
+        """
+        pipeline = [
+            {
+                "$vectorSearch": {
+                    "index": "vector_index",
+                    "path": "embedding",
+                    "queryVector": query_embedding,
+                    "numCandidates": 100,
+                    "limit": limit
+                }
+            },
+            {
+                "$project": {
+                    "score": {"$meta": "vectorSearchScore"},
+                    "job_role": 1,
+                    "job_description": 1,
+                    "skills": 1,
+                    "embedding": 1
+                }
+            }
+        ]
+        results = list(self.roles_col.aggregate(pipeline))
+        return [
+            {
+                "job_role": doc.get("job_role", ""),
+                "vector_score": round(doc.get("score", 0.0) * 100.0, 2),
+                "role_document": doc
+            }
+            for doc in results
+        ]
