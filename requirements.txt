@@ -4,3 +4,6 @@ pdfplumber
 requests
 numpy
 sentence-transformers
+streamlit-mic-recorder
+SpeechRecognition
+lameenc

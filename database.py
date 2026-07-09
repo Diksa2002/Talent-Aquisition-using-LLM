@@ -112,11 +112,12 @@ class TalentDB:
             {"$set": {"selected_role": role_name, "interview_status": "IN_PROGRESS"}}
         )
         
-    def add_interview_qa(self, candidate_id, question, answer=None, score=None, feedback=None):
+    def add_interview_qa(self, candidate_id, question, answer=None, audio_b64=None, score=None, feedback=None):
         """Appends a question-answer pair or updates it."""
         qa_entry = {
             "question": question,
             "answer": answer,
+            "audio_b64": audio_b64,
             "score": score,
             "feedback": feedback
         }
@@ -125,15 +126,17 @@ class TalentDB:
             {"$push": {"qas": qa_entry}}
         )
         
-    def update_last_qa_answer(self, candidate_id, answer):
+    def update_last_qa_answer(self, candidate_id, answer, audio_b64=None):
         """Updates the answer of the most recent QA entry."""
         candidate = self.candidates_col.find_one({"_id": ObjectId(candidate_id)})
         if not candidate or not candidate.get("qas"):
             return
         
-        # Update the answer field of the last item in the qas array
+        # Update the answer and audio_b64 fields of the last item in the qas array
         qas = candidate["qas"]
         qas[-1]["answer"] = answer
+        if audio_b64 is not None:
+            qas[-1]["audio_b64"] = audio_b64
         
         self.candidates_col.update_one(
             {"_id": ObjectId(candidate_id)},
