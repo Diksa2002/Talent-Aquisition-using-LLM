@@ -10,7 +10,7 @@ from database import TalentDB
 # =====================================================
 
 st.set_page_config(
-    page_title="Talent AI - Admin Dashboard",
+    page_title="Talent AI - Recruiter Portal",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -194,7 +194,8 @@ with st.sidebar:
     st.markdown("---")
     
     # Back to Candidate App Link
-    st.page_link("app.py", label="↩️ Candidate Interface", icon="👤")
+    st.markdown("### ↩️ Navigation")
+    st.markdown("[👤 Open Candidate App (Port 8501)](http://localhost:8501)", unsafe_allow_html=True)
     st.markdown("---")
     
     try:
@@ -209,7 +210,7 @@ st.markdown('<div class="main-title">Recruiter Admin Dashboard</div>', unsafe_al
 st.markdown('<div class="subtitle">Review parsed skills, candidate evaluations, expected preferences, and listen to voice transcriptions.</div>', unsafe_allow_html=True)
 
 if not candidates_list:
-    st.info("ℹ️ No candidate applications found in the database. Complete an application flow on the main page to populate this dashboard.")
+    st.info("ℹ️ No candidate applications found in the database. Complete an application flow on the candidate app to populate this dashboard.")
 else:
     # =====================================================
     # METRICS OVERVIEW CARD ROWS
