@@ -178,6 +178,5 @@ def create_presentation_pdf(output_path):
     print("Enhanced PDF Successfully Generated.")
 
 if __name__ == '__main__':
-    artifacts_dir = r"C:\Users\diksa\.gemini\antigravity\brain\2ba731fb-10e4-4177-93ec-eaca06fb3377"
-    pdf_path = os.path.join(artifacts_dir, "presentation_script.pdf")
+    pdf_path = "presentation_script.pdf"
     create_presentation_pdf(pdf_path)
