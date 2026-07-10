@@ -10,3 +10,5 @@ lameenc
 instructor
 pydantic
 openai
+streamlit-geolocation
+

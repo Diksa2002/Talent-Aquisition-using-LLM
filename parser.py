@@ -129,7 +129,7 @@ class CandidateProfile(BaseModel):
     years_of_experience: float = Field(default=0.0, description="Total years of experience as a float")
     current_location: str = Field(default="", description="Current city, state/country")
 
-def parse_resume_text_with_llm(resume_text, model_name=None):
+def parse_resume_text_with_llm(resume_text, model_name=None, current_location=None):
     """
     Sends the extracted resume text to Ollama and requests a structured JSON profile back using instructor and pydantic.
     """
@@ -144,6 +144,10 @@ def parse_resume_text_with_llm(resume_text, model_name=None):
             mode=instructor.Mode.JSON
         )
         
+        user_content = f"Resume Text:\n{resume_text}"
+        if current_location:
+            user_content = f"Candidate Current Location (via Geolocation/IP): {current_location}\n\n" + user_content
+            
         profile = client.chat.completions.create(
             model=model_name or config.LLM_MODEL,
             response_model=CandidateProfile,
@@ -153,11 +157,12 @@ def parse_resume_text_with_llm(resume_text, model_name=None):
                     "content": (
                         "You are an expert resume parsing assistant. Analyze the provided resume text and extract "
                         "the key details in a structured format conforming to the schema. "
+                        "If a 'current_location' is provided via Geolocation context, use it to fill the candidate's current_location. "
                         "For the 'education' year field, extract ONLY the completion/graduation year as an integer. "
                         "If a range is given, use the final year of that range."
                     )
                 },
-                {"role": "user", "content": f"Resume Text:\n{resume_text}"}
+                {"role": "user", "content": user_content}
             ],
             temperature=0.0
         )
@@ -328,7 +333,7 @@ def process_resume_and_match(file_path, file_type, all_roles, model_name=None):
     profile, recommendations = parse_resume_and_match_jobs_with_llm(raw_text, all_roles, model_name=model_name)
     return raw_text, profile, recommendations
 
-def process_resume_hybrid_rerank(file_path, file_type, all_roles, model_name=None):
+def process_resume_hybrid_rerank(file_path, file_type, all_roles, model_name=None, current_location=None):
     """
     1. Extracts text from the file path.
     2. Generates candidate resume embedding.
@@ -358,7 +363,7 @@ def process_resume_hybrid_rerank(file_path, file_type, all_roles, model_name=Non
             
     # 3. Extract profile details using instructor and pydantic
     print("Extracting candidate profile features using instructor and pydantic...")
-    parsed_profile = parse_resume_text_with_llm(raw_text, model_name=model_name)
+    parsed_profile = parse_resume_text_with_llm(raw_text, model_name=model_name, current_location=current_location)
     
     # 4. Perform MongoDB Atlas Vector Search
     recommendations = []
