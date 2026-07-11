@@ -244,10 +244,34 @@ else:
     st.markdown("---")
 
     # =====================================================
+    # INTERACTIVE ANALYTICS CHARTS
+    # =====================================================
+    with st.expander("📊 Recruitment Analytics & Insights", expanded=False):
+        roles_data = [c.get("selected_role") for c in candidates_list if c.get("selected_role")]
+        experiences_data = [float(c.get("years_of_experience", 0.0)) for c in candidates_list if c.get("years_of_experience") is not None]
+        
+        col_c1, col_c2 = st.columns(2)
+        with col_c1:
+            st.write("📈 **Applications by Job Role**")
+            if roles_data:
+                role_counts = pd.Series(roles_data).value_counts()
+                st.bar_chart(role_counts)
+            else:
+                st.info("No applications with selected roles yet.")
+                
+        with col_c2:
+            st.write("⏳ **Experience Levels (Years)**")
+            if experiences_data:
+                exp_counts = pd.Series(experiences_data).value_counts().sort_index()
+                st.line_chart(exp_counts)
+            else:
+                st.info("No experience data available.")
+
+    # =====================================================
     # SEARCH & FILTERS
     # =====================================================
-    st.subheader("Filter Candidates")
-    col_f1, col_f2, col_f3 = st.columns([2, 1, 1])
+    st.subheader("Filter & Sort Candidates")
+    col_f1, col_f2, col_f3, col_f4 = st.columns([2, 1, 1, 1])
     
     with col_f1:
         search_query = st.text_input("🔍 Search by Name or Skill", placeholder="e.g. Rahul, Python, MongoDB...")
@@ -256,6 +280,8 @@ else:
         selected_role_filter = st.selectbox("Job Role Filter", ["All Roles"] + roles_list)
     with col_f3:
         status_filter = st.selectbox("Recruiter Review Status", ["All Statuses", "Applied", "Under Review", "Shortlisted", "Rejected"])
+    with col_f4:
+        sort_order = st.selectbox("Sort By", ["None", "Experience (High to Low)", "Name (A-Z)"])
 
     # Filter candidate list in memory
     filtered_candidates = []
@@ -285,7 +311,13 @@ else:
         if matches_search and matches_role and matches_status:
             filtered_candidates.append(cand)
 
-    # Reranked candidates
+    # Apply sorting logic
+    if sort_order == "Experience (High to Low)":
+        filtered_candidates.sort(key=lambda x: float(x.get("years_of_experience", 0.0)), reverse=True)
+    elif sort_order == "Name (A-Z)":
+        filtered_candidates.sort(key=lambda x: x.get("personal_info", {}).get("name", "zzzzz").lower())
+
+    # Match counts display
     st.write(f"Showing {len(filtered_candidates)} applicants matching criteria.")
 
     # Two column layout: candidate list table and selected details panel
@@ -371,6 +403,33 @@ else:
                 # Contact info
                 st.write(f"✉️ **Email**: `{email}` | 📞 **Phone**: `{phone}` | 📍 **Location**: `{loc}`")
                 st.write(f"💼 **Applied For**: **{role}** | ⏳ **Experience**: {active_cand.get('years_of_experience', 0.0)} Years")
+                
+                # Generate Report Text
+                report_io = io.StringIO()
+                report_io.write(f"=== CANDIDATE AI SCORECARD: {name} ===\n")
+                report_io.write(f"Applied Role: {role}\n")
+                report_io.write(f"Experience: {active_cand.get('years_of_experience', 0.0)} Years\n")
+                report_io.write(f"Email: {email} | Phone: {phone}\n")
+                report_io.write(f"Location: {loc}\n\n")
+                report_io.write(f"--- AI Assessment ---\n")
+                report_io.write(f"Recommendation: {eval_report.get('recommendation', 'N/A')}\n")
+                report_io.write(f"Communication Score: {eval_report.get('soft_skills_score', 0.0)}%\n\n")
+                report_io.write(f"Technical Summary:\n{eval_report.get('technical_summary', 'N/A')}\n\n")
+                report_io.write(f"Communication Summary:\n{eval_report.get('soft_skill_summary', 'N/A')}\n\n")
+                report_io.write(f"--- Interview Transcript ---\n")
+                for idx, qa in enumerate(active_cand.get("qas", [])):
+                    report_io.write(f"Q{idx+1}: {qa.get('question')}\n")
+                    report_io.write(f"A: {qa.get('answer')}\n\n")
+                
+                report_text = report_io.getvalue()
+                
+                st.download_button(
+                    label="📥 Export Candidate Report (TXT)",
+                    data=report_text,
+                    file_name=f"Report_{name.replace(' ', '_')}.txt",
+                    mime="text/plain",
+                    use_container_width=True
+                )
                 
                 # ---------------------------------------------
                 # RECRUITER DECISION & NOTE PAD
