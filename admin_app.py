@@ -324,7 +324,6 @@ else:
                     <div class="candidate-card">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                             <h4 style="margin: 0; color: #818cf8;">{name}</h4>
-                            <span class="score-badge">Match: {score}%</span>
                         </div>
                         <div style="font-size: 0.9rem; color: #cbd5e1; margin-bottom: 8px;">
                             <b>Role:</b> {role} | <b>Experience:</b> {cand.get("years_of_experience", 0.0)} Years
@@ -407,14 +406,6 @@ else:
                     else:
                         st.markdown(f"""
                         <div style="padding: 10px; background-color: rgba(255,255,255,0.03); border-radius: 8px; margin-bottom:15px;">
-                            <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
-                                <span><b>Overall Match Rating:</b></span>
-                                <span class="score-badge">{eval_report.get('final_score', 0.0)}%</span>
-                            </div>
-                            <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
-                                <span>Technical Competency Score:</span>
-                                <b>{eval_report.get('technical_score', 0.0)}%</b>
-                            </div>
                             <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
                                 <span>Communication & Soft Skills Score:</span>
                                 <b>{eval_report.get('soft_skills_score', 0.0)}%</b>
