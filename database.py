@@ -209,7 +209,7 @@ class TalentDB:
         # Search for candidate with matching email and status IN_PROGRESS
         candidate = self.candidates_col.find_one({
             "personal_info.email": regex,
-            "interview_status": "IN_PROGRESS"
+            "interview_status": {"$in": ["IN_PROGRESS", "PENDING"]}
         })
         return candidate
 

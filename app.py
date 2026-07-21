@@ -267,37 +267,70 @@ with st.sidebar:
 
 if st.session_state.nav_page == "Upload Resume":
     st.markdown('<div class="main-header">Smart Talent Sourcing</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Upload your resume to parse skills, extract experience, and semantically match against open roles.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Start a new application or restore an in-progress interview seamlessly.</div>', unsafe_allow_html=True)
 
-    uploaded_file = st.file_uploader("Upload Resume (PDF format)", type=["pdf"])
+    tab_new, tab_resume = st.tabs(["📄 Start New Application", "🔁 Resume Incomplete Interview"])
 
-    if uploaded_file is not None:
-        with st.spinner("📄 Reading PDF and extracting structured profile via AI..."):
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                tmp.write(uploaded_file.read())
-                tmp_path = tmp.name
+    with tab_new:
+        uploaded_file = st.file_uploader("Upload Resume (PDF format)", type=["pdf"])
 
-            resume_text = parser.extract_text_from_pdf(tmp_path)
-            os.remove(tmp_path)
+        if uploaded_file is not None:
+            with st.spinner("📄 Reading PDF and extracting structured profile via AI..."):
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                    tmp.write(uploaded_file.read())
+                    tmp_path = tmp.name
 
-            if not resume_text:
-                st.error("Failed to extract text from the PDF. Please try another PDF.")
+                resume_text = parser.extract_text_from_pdf(tmp_path)
+                os.remove(tmp_path)
+
+                if not resume_text:
+                    st.error("Failed to extract text from the PDF. Please try another PDF.")
+                else:
+                    profile = parser.parse_resume_text_with_llm(resume_text)
+                    st.session_state.resume_text = resume_text
+                    st.session_state.candidate_profile = profile
+
+                    # Perform BERT Semantic Reranking
+                    with st.spinner("🤖 Computing BERT Vector Similarity with Job Roles..."):
+                        all_roles = db.get_all_roles()
+                        matched_roles = matcher.vector_search_jobs(resume_text, all_roles)
+                        st.session_state.matched_roles = matched_roles
+                        resume_emb = None
+
+                    # Save candidate to MongoDB
+                    cand_id = db.create_candidate(profile, resume_text, resume_emb)
+                    st.session_state.candidate_id = cand_id
+                    st.success("✅ Resume parsed and candidate profile created successfully!")
+
+    with tab_resume:
+        st.subheader("🔍 Resume Your Incomplete Interview")
+        st.caption("Enter the email address registered on your application to restore your session.")
+        
+        email_input = st.text_input("Registered Email Address:", placeholder="candidate@example.com")
+        if st.button("🔍 Find & Resume Interview", type="primary"):
+            if not email_input.strip():
+                st.warning("Please enter your registered email address.")
             else:
-                profile = parser.parse_resume_text_with_llm(resume_text)
-                st.session_state.resume_text = resume_text
-                st.session_state.candidate_profile = profile
-
-                # Perform BERT Semantic Reranking
-                with st.spinner("🤖 Computing BERT Vector Similarity with Job Roles..."):
-                    all_roles = db.get_all_roles()
-                    matched_roles = matcher.vector_search_jobs(resume_text, all_roles)
-                    st.session_state.matched_roles = matched_roles
-                    resume_emb = None
-
-                # Save candidate to MongoDB
-                cand_id = db.create_candidate(profile, resume_text, resume_emb)
-                st.session_state.candidate_id = cand_id
-                st.success("✅ Resume parsed and candidate profile created successfully!")
+                with st.spinner("Searching database for active interview session..."):
+                    cand_doc = db.find_incomplete_candidate_by_email(email_input)
+                    if cand_doc:
+                        st.session_state.candidate_id = str(cand_doc["_id"])
+                        st.session_state.candidate_profile = cand_doc.get("personal_info", {})
+                        st.session_state.candidate_profile["skills"] = cand_doc.get("extracted_skills", [])
+                        st.session_state.candidate_profile["projects"] = cand_doc.get("projects", [])
+                        st.session_state.resume_text = cand_doc.get("resume_text", "")
+                        st.session_state.qas_history = cand_doc.get("qas", [])
+                        
+                        role_name = cand_doc.get("selected_role")
+                        if role_name:
+                            st.session_state.selected_role = db.get_role_by_name(role_name)
+                            
+                        st.session_state.interview_finished = (cand_doc.get("interview_status") == "COMPLETED")
+                        st.session_state.nav_page = "Take / Resume Interview"
+                        st.success("✅ Session restored successfully! Redirecting to your interview...")
+                        st.rerun()
+                    else:
+                        st.warning("⚠️ No active in-progress interview was found for this email address. Please upload your resume to start a new application.")
 
     # Display Parsed Profile & Top Matched Roles
     if st.session_state.candidate_profile and st.session_state.matched_roles:
