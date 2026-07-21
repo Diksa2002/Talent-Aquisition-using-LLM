@@ -140,10 +140,9 @@ def get_db():
     db.seed_roles()
     return db
 
-def generate_question_audio(text):
+def text_to_speech_gtts(text):
     """
-    Generates realistic, human-like voice audio using gTTS (Google Text-to-Speech).
-    Returns MP3 audio bytes.
+    Makes a request to the gTTS service and returns the generated MP3 audio bytes.
     """
     try:
         from gtts import gTTS
@@ -465,35 +464,14 @@ elif st.session_state.nav_page == "Take / Resume Interview":
             </div>
             """, unsafe_allow_html=True)
 
-            # Human-like Voice Text-to-Speech Player Component
-            audio_bytes = generate_question_audio(question_text)
-            if audio_bytes:
-                st.write("🔊 **AI Interviewer Audio (Human Voice):**")
-                st.audio(audio_bytes, format="audio/mp3")
-            
-            clean_q_script = question_text.replace('"', '\\"').replace('\n', ' ')
-            tts_html = f"""
-            <div style="margin-bottom: 15px;">
-                <button onclick="speakQuestion()" style="background: linear-gradient(135deg, #6366f1, #a855f7); color: white; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px;">
-                    🔊 Speak Again
-                </button>
-            </div>
-            <script>
-            function speakQuestion() {{
-                if ('speechSynthesis' in window) {{
-                    window.speechSynthesis.cancel();
-                    var msg = new SpeechSynthesisUtterance("{clean_q_script}");
-                    var voices = window.speechSynthesis.getVoices();
-                    var natural = voices.find(v => v.name.includes("Natural") || v.name.includes("Google") || v.name.includes("Neural"));
-                    if (natural) msg.voice = natural;
-                    msg.rate = 0.95;
-                    msg.pitch = 1.0;
-                    window.speechSynthesis.speak(msg);
-                }}
-            }}
-            </script>
-            """
-            components.html(tts_html, height=50)
+            # Human-like Voice Reader (gTTS with Session State Caching & Autoplay)
+            if st.session_state.get("tts_question_key") != question_text:
+                st.session_state.current_tts_audio = text_to_speech_gtts(question_text)
+                st.session_state.tts_question_key = question_text
+
+            if st.session_state.get("current_tts_audio"):
+                st.write("🔊 **AI Interviewer Audio (Natural Human Voice):**")
+                st.audio(st.session_state.current_tts_audio, format="audio/mp3", autoplay=True)
 
             # Answer Input Methods: Voice or Text
             st.subheader("Your Answer")
