@@ -218,14 +218,17 @@ else:
     total_candidates = len(candidates_list)
     completed_interviews = sum(1 for c in candidates_list if c.get("interview_status") == "COMPLETED")
     
-    # Calculate average scores
-    evaluations = [c.get("evaluation") for c in candidates_list if c.get("evaluation") and c.get("interview_status") == "COMPLETED"]
+    # Calculate average scores from evaluation or top-level score fields saved in MongoDB
+    evaluations = [
+        c.get("evaluation") for c in candidates_list 
+        if c.get("evaluation") and c.get("interview_status") == "COMPLETED"
+    ]
     
-    avg_final = sum(float(e.get("final_score", 0.0)) for e in evaluations) / len(evaluations) if evaluations else 0.0
-    avg_tech = sum(float(e.get("technical_score", 0.0)) for e in evaluations) / len(evaluations) if evaluations else 0.0
-    avg_soft = sum(float(e.get("soft_skills_score", 0.0)) for e in evaluations) / len(evaluations) if evaluations else 0.0
+    avg_final = sum(float(c.get("final_score") or c.get("evaluation", {}).get("final_score", 0.0)) for c in candidates_list if c.get("evaluation")) / len(evaluations) if evaluations else 0.0
+    avg_tech = sum(float(c.get("technical_score") or c.get("evaluation", {}).get("technical_score", 0.0)) for c in candidates_list if c.get("evaluation")) / len(evaluations) if evaluations else 0.0
+    avg_soft = sum(float(c.get("soft_skills_score") or c.get("evaluation", {}).get("soft_skills_score", 0.0)) for c in candidates_list if c.get("evaluation")) / len(evaluations) if evaluations else 0.0
     
-    col_m1, col_m2 = st.columns(2)
+    col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
     with col_m1:
         st.markdown(f"""
         <div class="metric-card">
@@ -240,17 +243,41 @@ else:
             <div class="metric-value">{completed_interviews}</div>
         </div>
         """, unsafe_allow_html=True)
+    with col_m3:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Avg Tech Score</div>
+            <div class="metric-value" style="color: #818cf8;">{avg_tech:.1f}%</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col_m4:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Avg Soft Skills Score</div>
+            <div class="metric-value" style="color: #38bdf8;">{avg_soft:.1f}%</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col_m5:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Avg Overall Score</div>
+            <div class="metric-value" style="color: #4ade80;">{avg_final:.1f}%</div>
+        </div>
+        """, unsafe_allow_html=True)
         
     st.markdown("---")
 
     # =====================================================
-    # INTERACTIVE ANALYTICS CHARTS
+    # INTERACTIVE ANALYTICS CHARTS & HR DASHBOARD
     # =====================================================
-    with st.expander("📊 Recruitment Analytics & Insights", expanded=False):
+    with st.expander("📊 HR Analytics Dashboard & Performance Insights", expanded=True):
         roles_data = [c.get("selected_role") for c in candidates_list if c.get("selected_role")]
         experiences_data = [float(c.get("years_of_experience", 0.0)) for c in candidates_list if c.get("years_of_experience") is not None]
         
-        col_c1, col_c2 = st.columns(2)
+        # Recommendations breakdown
+        recs = [c.get("evaluation", {}).get("recommendation", "Pending") for c in candidates_list if c.get("interview_status") == "COMPLETED"]
+        
+        col_c1, col_c2, col_c3 = st.columns(3)
         with col_c1:
             st.write("📈 **Applications by Job Role**")
             if roles_data:
@@ -260,12 +287,45 @@ else:
                 st.info("No applications with selected roles yet.")
                 
         with col_c2:
+            st.write("🎯 **Hiring Recommendations Breakdown**")
+            if recs:
+                rec_counts = pd.Series(recs).value_counts()
+                st.bar_chart(rec_counts)
+            else:
+                st.info("No completed evaluation recommendations yet.")
+
+        with col_c3:
             st.write("⏳ **Experience Levels (Years)**")
             if experiences_data:
                 exp_counts = pd.Series(experiences_data).value_counts().sort_index()
                 st.line_chart(exp_counts)
             else:
                 st.info("No experience data available.")
+
+        # Candidate Leaderboard Table
+        if evaluations:
+            st.markdown("---")
+            st.write("🏆 **Candidate Score Leaderboard (Saved in MongoDB)**")
+            leaderboard_data = []
+            for c in candidates_list:
+                if c.get("interview_status") == "COMPLETED":
+                    p_info = c.get("personal_info", {})
+                    eval_data = c.get("evaluation", {})
+                    final_sc = float(c.get("final_score") or eval_data.get("final_score", 0.0))
+                    tech_sc = float(c.get("technical_score") or eval_data.get("technical_score", 0.0))
+                    soft_sc = float(c.get("soft_skills_score") or eval_data.get("soft_skills_score", 0.0))
+                    leaderboard_data.append({
+                        "Candidate Name": p_info.get("name", "Unknown"),
+                        "Job Role": c.get("selected_role", "N/A"),
+                        "Final Score (%)": final_sc,
+                        "Technical Score (%)": tech_sc,
+                        "Soft Skills Score (%)": soft_sc,
+                        "Recommendation": eval_data.get("recommendation", "N/A"),
+                        "Recruiter Status": c.get("recruiter_status", "Applied")
+                    })
+            if leaderboard_data:
+                df_lb = pd.DataFrame(leaderboard_data).sort_values(by="Final Score (%)", ascending=False)
+                st.dataframe(df_lb, use_container_width=True)
 
     # =====================================================
     # SEARCH & FILTERS
@@ -281,7 +341,7 @@ else:
     with col_f3:
         status_filter = st.selectbox("Recruiter Review Status", ["All Statuses", "Applied", "Under Review", "Shortlisted", "Rejected"])
     with col_f4:
-        sort_order = st.selectbox("Sort By", ["None", "Experience (High to Low)", "Name (A-Z)"])
+        sort_order = st.selectbox("Sort By", ["Score (High to Low)", "Experience (High to Low)", "Name (A-Z)"])
 
     # Filter candidate list in memory
     filtered_candidates = []
@@ -312,7 +372,12 @@ else:
             filtered_candidates.append(cand)
 
     # Apply sorting logic
-    if sort_order == "Experience (High to Low)":
+    if sort_order == "Score (High to Low)":
+        filtered_candidates.sort(
+            key=lambda x: float(x.get("final_score") or x.get("evaluation", {}).get("final_score", 0.0)),
+            reverse=True
+        )
+    elif sort_order == "Experience (High to Low)":
         filtered_candidates.sort(key=lambda x: float(x.get("years_of_experience", 0.0)), reverse=True)
     elif sort_order == "Name (A-Z)":
         filtered_candidates.sort(key=lambda x: x.get("personal_info", {}).get("name", "zzzzz").lower())

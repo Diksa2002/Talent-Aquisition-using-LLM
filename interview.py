@@ -5,6 +5,7 @@ def generate_next_question(job_role, job_description, candidate_skills, candidat
     """
     Formulates the next interview question based on job role details, candidate skills, candidate projects,
     and previous chat history. Ensures a conversational and context-aware flow.
+    Strictly aligns questions with the target job role and ignores non-matching resume details.
     """
     TOTAL_QUESTIONS = 5
     matched_role = job_role
@@ -12,26 +13,28 @@ def generate_next_question(job_role, job_description, candidate_skills, candidat
     projects = ', '.join(candidate_projects) if candidate_projects else 'Not specified'
     
     system_prompt = f"""
-            You are a recruiter.
-            Candidate Matched Role:
+            You are an expert technical interviewer and recruiter.
+            
+            TARGET JOB ROLE (ABSOLUTE SOURCE OF TRUTH):
             {matched_role}
-            Candidate Skills:
+            Job Role Description:
+            {job_description}
+            
+            CANDIDATE RESUME SKILLS:
             {skills}
-            Candidate Projects:
+            CANDIDATE RESUME PROJECTS:
             {projects}
-            Rules:
-            1. Ask exactly {TOTAL_QUESTIONS} questions.
-            2. Ask only one question at a time. The next question must be asked only after the candidate answers the current question. If the candidate’s answer is incomplete, unclear, weak, or not satisfactory, ask relevant follow-up questions before moving to the next main question.
-            3. Understand the selected job role properly from both a practical and logical perspective. Clearly understand the actual responsibilities of the role and the minimum educational qualification realistically required to perform that job. Based on this understanding, generate appropriate interview questions.
-            4. If the job role requires strong theoretical understanding along with practical skills, ask questions that evaluate conceptual clarity, technical understanding, and practical application of important concepts. 
-               If the job role mainly requires practical field skills and does not require advanced theoretical education or a degree, focus more on practical troubleshooting, real-world work situations, installation steps, customer handling, and technical tasks commonly performed during the job.
-            Example:
-            - A househelp does not need to know the chemical formula of detergent, but should know how clothes should be washed properly.
-            - A Data Scientist should possess theoretical knowledge, conceptual clarity, educational background, and practical implementation skills.
-            5. Analyze the educational qualification of the candidate and adjust the difficulty level accordingly. If a candidate has a strong educational background but has applied for a role that does not require advanced theoretical knowledge, do not ask unnecessarily difficult or highly academic questions unless genuinely relevant to the job role.
-            6. Ask all interview questions in simple, clear, and natural English language that is easy for the candidate to understand.
-            7. The interview should feel practical, realistic, and relevant to real-world job responsibilities instead of sounding like an academic examination.
-            8. Do NOT write any conversational introduction, filler (e.g., 'Okay, here is my next question'), or logs. Output only the direct question text.
+            
+            CRITICAL RULES:
+            1. THE TARGET JOB ROLE IS THE ABSOLUTE SOURCE OF TRUTH.
+               - You MUST ask questions ONLY relevant to the target job role: '{matched_role}'.
+               - If candidate resume skills or projects are UNRELATED to '{matched_role}' (e.g. Python or Machine Learning skills listed for a Financial Accountant or Store Manager role), YOU MUST COMPLETELY IGNORE THEM.
+               - DO NOT ask programming or tech stack questions unless '{matched_role}' explicitly requires them!
+            2. Ask exactly {TOTAL_QUESTIONS} questions, one at a time.
+            3. Evaluate response quality before generating the next question. If the candidate's previous answer was incomplete, unclear, or weak, ask a relevant follow-up question.
+            4. Adjust question difficulty appropriately for the practical domain of '{matched_role}'. Focus on real-world troubleshooting, field scenarios, core domain knowledge, and practical execution.
+            5. Write all questions in simple, clear, professional English.
+            6. Output ONLY the direct interview question text. No intro/outro fillers, conversational logs, or headers.
             """
     
     messages = [{"role": "system", "content": system_prompt}]
@@ -55,35 +58,32 @@ def generate_next_question(job_role, job_description, candidate_skills, candidat
         print(f"Error generating interview question: {str(e)}")
         q_idx = len(qas_history)
         
-        # Rotate skill-based fallbacks if candidate has skills
-        if candidate_skills:
-            skill = candidate_skills[q_idx % len(candidate_skills)]
-            skills_fallbacks = [
-                f"Can you describe a challenging project where you utilized {skill} and how you overcame any technical hurdles?",
-                f"In your experience working with {skill}, what are the key performance optimizations or best practices you follow?",
-                f"How would you explain the core concepts of {skill} to a non-technical team member or client?",
-                f"What is a design choice or architecture decision you had to make while using {skill} on a recent project?",
-                f"How does {skill} compare to alternative tools or libraries you've used in the past?"
-            ]
-            return skills_fallbacks[q_idx % len(skills_fallbacks)]
-            
-        # Rotate general role fallbacks if candidate has no specific skills
+        # General fallbacks aligned with target job role
         general_fallbacks = [
-            f"Could you describe a challenging technical project you've worked on recently as a {job_role} and explain your role in it?",
-            "How do you typically approach troubleshooting or debugging a complex technical issue under pressure?",
-            "Can you share an experience where you had to learn a new framework or technology quickly to deliver a feature?",
-            "How do you balance high-quality code standards with tight deadlines in a collaborative team?",
-            "What are your primary technical goals for the next 2-3 years, and how does this job role fit into those plans?"
+            f"Could you describe a challenging scenario you experienced as a {job_role} and explain how you handled it?",
+            f"How do you typically approach troubleshooting or solving complex operational problems as a {job_role}?",
+            f"Can you share an instance where you had to adapt quickly to unexpected changes in your role as a {job_role}?",
+            f"How do you maintain high quality standards while meeting tight deadlines in a {job_role} position?",
+            f"What core skills or best practices do you consider essential to succeed as a {job_role}?"
         ]
         return general_fallbacks[q_idx % len(general_fallbacks)]
 
 def evaluate_candidate(candidate_name, job_role, qas_history, model_name=None):
     """
     Reviews the candidate transcript and generates a graded evaluation scoring card.
+    Strictly penalizes gibberish ('xyz', 'asdf', off-topic noise) and skipped questions with 0.0 scores.
     """
     system_prompt = (
         "You are an expert technical interviewer and talent assessor. Your job is to review the "
         "provided interview transcript and generate a structured grading scorecard.\n\n"
+        "STRICT EVALUATION CRITERIA:\n"
+        "1. GIBBERISH / NONSENSE / OFF-TOPIC ANSWERS: If an answer contains nonsense (e.g., 'xyz', 'abc', 'asdf', random text), "
+        "empty response, or completely off-topic noise, YOU MUST AWARD technical_score = 0.0 AND soft_skills_score = 0.0.\n"
+        "2. SKIPPED ANSWERS: If the answer is 'Skipped', AWARD technical_score = 0.0 AND soft_skills_score = 0.0.\n"
+        "3. SHORT / SURFACE ANSWERS: If an answer is extremely short (1-3 generic words like 'yes', 'good', 'i know'), "
+        "the technical_score MUST NOT exceed 30.0 and soft_skills_score MUST NOT exceed 20.0.\n"
+        "4. INDEPENDENT METRICS: Evaluate technical accuracy and soft skills communication structures independently. "
+        "Do NOT assign identical scores unless genuinely justified by the candidate's performance.\n\n"
         "You MUST return ONLY a valid JSON object. Do not include markdown block wrapping (```json), "
         "notes, or explanations. Conform strictly to this schema:\n"
         "{\n"
@@ -92,16 +92,16 @@ def evaluate_candidate(candidate_name, job_role, qas_history, model_name=None):
         "      \"question_number\": 1,\n"
         "      \"question\": \"The question asked\",\n"
         "      \"answer\": \"The candidate's response\",\n"
-        "      \"technical_score\": 80.00 (float, 0.00 to 100.00 representing technical competence for this response),\n"
-        "      \"soft_skills_score\": 85.00 (float, 0.00 to 100.00 representing communication clarity/style for this response),\n"
+        "      \"technical_score\": 0.0 to 100.0 (float, strict technical correctness),\n"
+        "      \"soft_skills_score\": 0.0 to 100.0 (float, communication clarity & structure),\n"
         "      \"feedback\": \"Constructive feedback for this specific response\"\n"
         "    }\n"
         "  ],\n"
-        "  \"technical_summary\": \"Detailed overview of technical strengths, core gaps, and tools mastered.\",\n"
-        "  \"soft_skill_summary\": \"Assessment of structure, vocabulary, confidence, and empathy.\",\n"
+        "  \"technical_summary\": \"Detailed overview of technical strengths, core gaps, and domain mastery.\",\n"
+        "  \"soft_skill_summary\": \"Assessment of structure, vocabulary, confidence, and articulation.\",\n"
         "  \"recommendation\": \"Strong Hire / Hire / No Hire\"\n"
         "}\n\n"
-        "Analyze the depth, correctness, and relevance of each answer carefully. Be objective and fair."
+        "Analyze the depth, correctness, and relevance of each answer carefully. Be objective, strict, and fair."
     )
     
     # Format the transcript text
@@ -137,8 +137,24 @@ def evaluate_candidate(candidate_name, job_role, qas_history, model_name=None):
         
         evaluation = json.loads(response_content)
         
-        # Calculate overall averages
+        # Post-process detailed feedback to enforce hard score rules (e.g. Skipped or Gibberish)
         detailed = evaluation.get("detailed_feedback", [])
+        gibberish_keywords = {"xyz", "abc", "asdf", "test", "qwerty", "none", "no"}
+        
+        for item in detailed:
+            ans = str(item.get("answer", "")).strip().lower()
+            if ans == "skipped" or ans in gibberish_keywords or len(ans) <= 3:
+                # Force zero for skipped or obvious gibberish
+                if ans == "skipped" or ans in gibberish_keywords:
+                    item["technical_score"] = 0.0
+                    item["soft_skills_score"] = 0.0
+                    if ans == "skipped":
+                        item["feedback"] = "Question was skipped by the candidate."
+                elif len(ans.split()) <= 2:
+                    item["technical_score"] = min(float(item.get("technical_score") or 0.0), 30.0)
+                    item["soft_skills_score"] = min(float(item.get("soft_skills_score") or 0.0), 20.0)
+
+        # Calculate overall averages
         if detailed:
             tech_scores = [float(q.get("technical_score") or 0.0) for q in detailed]
             soft_scores = [float(q.get("soft_skills_score") or 0.0) for q in detailed]
@@ -156,6 +172,7 @@ def evaluate_candidate(candidate_name, job_role, qas_history, model_name=None):
             evaluation["final_score"] = 0.0
             
         return evaluation
+
     except Exception as e:
         print(f"Error evaluating candidate transcript: {str(e)}")
         # Construct fallback scorecard

@@ -13,4 +13,5 @@ instructor
 pydantic
 openai
 streamlit-geolocation
+gTTS
 

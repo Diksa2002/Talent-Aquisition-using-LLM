@@ -163,6 +163,9 @@ class TalentDB:
             {"_id": ObjectId(candidate_id)},
             {"$set": {
                 "evaluation": evaluation_report,
+                "final_score": float(evaluation_report.get("final_score", 0.0)),
+                "technical_score": float(evaluation_report.get("technical_score", 0.0)),
+                "soft_skills_score": float(evaluation_report.get("soft_skills_score", 0.0)),
                 "interview_status": "COMPLETED"
             }}
         )
@@ -170,6 +173,22 @@ class TalentDB:
     def get_candidate(self, candidate_id):
         """Retrieves a candidate by ID."""
         return self.candidates_col.find_one({"_id": ObjectId(candidate_id)})
+
+    def find_incomplete_candidate_by_email(self, email):
+        """
+        Finds a candidate with interview_status 'IN_PROGRESS' by email address.
+        Case-insensitive email match.
+        """
+        if not email:
+            return None
+        import re
+        regex = re.compile(f"^{re.escape(email.strip())}$", re.IGNORECASE)
+        # Search for candidate with matching email and status IN_PROGRESS
+        candidate = self.candidates_col.find_one({
+            "personal_info.email": regex,
+            "interview_status": "IN_PROGRESS"
+        })
+        return candidate
 
     def update_recruiter_status(self, candidate_id, status, notes=""):
         """Updates the recruiter review status and custom recruiter notes for a candidate."""

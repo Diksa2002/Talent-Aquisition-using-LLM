@@ -1,6 +1,6 @@
 import os
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
@@ -15,10 +15,9 @@ def create_presentation_pdf(output_path):
         bottomMargin=54
     )
     
-    # Styles
     styles = getSampleStyleSheet()
     
-    # Custom Styles
+    # Custom Typography & Styling
     title_style = ParagraphStyle(
         'DocTitle',
         parent=styles['Heading1'],
@@ -27,7 +26,7 @@ def create_presentation_pdf(output_path):
         leading=24,
         textColor=colors.HexColor('#4f46e5'),
         alignment=1, # Center
-        spaceAfter=15
+        spaceAfter=10
     )
     
     h1_style = ParagraphStyle(
@@ -47,17 +46,35 @@ def create_presentation_pdf(output_path):
         parent=styles['Normal'],
         fontName='Helvetica',
         fontSize=9.5,
-        leading=13,
+        leading=13.5,
         textColor=colors.HexColor('#334155'),
+        spaceAfter=8
+    )
+    
+    spoken_style = ParagraphStyle(
+        'SpokenText',
+        parent=body_style,
+        leftIndent=15,
+        textColor=colors.HexColor('#3b82f6'),
+        fontName='Helvetica-BoldOblique',
+        spaceAfter=10
+    )
+    
+    action_style = ParagraphStyle(
+        'ActionText',
+        parent=body_style,
+        leftIndent=15,
+        textColor=colors.HexColor('#e11d48'),
+        fontName='Helvetica-Bold',
         spaceAfter=6
     )
     
     bullet_style = ParagraphStyle(
         'BulletCustom',
         parent=body_style,
-        leftIndent=15,
+        leftIndent=20,
         firstLineIndent=-10,
-        spaceAfter=4
+        spaceAfter=6
     )
     
     quote_style = ParagraphStyle(
@@ -72,8 +89,8 @@ def create_presentation_pdf(output_path):
         'TableHeader',
         parent=styles['Normal'],
         fontName='Helvetica-Bold',
-        fontSize=8.5,
-        leading=11,
+        fontSize=8,
+        leading=10,
         textColor=colors.white
     )
     
@@ -81,101 +98,79 @@ def create_presentation_pdf(output_path):
         'TableBody',
         parent=styles['Normal'],
         fontName='Helvetica',
-        fontSize=8,
-        leading=10,
+        fontSize=7.5,
+        leading=9.5,
         textColor=colors.HexColor('#1e293b')
     )
     
     story = []
     
-    # Title
-    story.append(Paragraph("Masterclass Presentation Script", title_style))
+    # Title Page Header
+    story.append(Paragraph("10-15 Minute Presentation Playbook", title_style))
     story.append(Paragraph("AI-Powered Talent Acquisition Platform", ParagraphStyle('Sub', parent=title_style, fontSize=13, leading=15, textColor=colors.HexColor('#64748b'), spaceAfter=15)))
+    story.append(Paragraph("<b>Speaker Roles:</b> You will narrate the technical flows and design choices, while your partner operates the Candidate Portal (localhost:8501) and Recruiter Dashboard (localhost:8502) live.", body_style))
+    story.append(Spacer(1, 10))
+    story.append(Paragraph("---", body_style))
+    
+    # SECTION 1
+    story.append(Paragraph("Section 1: The Project Overview & Problem Statement (3 Minutes)", h1_style))
+    story.append(Paragraph("<b>[ACTION]:</b> Open the Candidate Portal home page at <u>http://localhost:8501</u>. Keep the landing screen visible.", action_style))
+    story.append(Paragraph("<b>[WHAT YOU SAY]:</b>", body_style))
+    story.append(Paragraph("\"Good morning, respected mentors and panel members. Today, we are presenting our AI-Powered Talent Acquisition Platform. Let us begin by discussing the operational bottlenecks in recruitment. The recruitment funnel is heavily bottlenecked at the sourcing and screening stages. HR teams receive hundreds of resumes daily, making manual parsing slow and prone to subjective bias. Furthermore, candidate tracking systems traditionally rely on keyword-based lookups. This means a candidate who games the keywords gets shortlisted, while a highly qualified applicant who uses alternative terminology is ignored.\"", spoken_style))
+    story.append(Paragraph("\"Our platform addresses this by automating the end-to-end evaluation cycle. We have engineered a solution that uses natural language processing to extract skills semantically, matching them against job profiles using vector search. The candidate is then put through an interactive, voice-based technical interview. The system records, compresses, and transcribes candidate answers on-the-fly, culminating in an LLM-generated evaluation report. Let's walk through the live candidate experience from the beginning.\"", spoken_style))
     story.append(Spacer(1, 5))
     
-    # Section 1
-    story.append(Paragraph("Part 1: The Pitch (The Hook & Problem) - 2 Minutes", h1_style))
-    story.append(Paragraph("<b>Opening Speech Hook:</b>", body_style))
-    story.append(Paragraph("\"Good morning, everyone. We have all experienced the friction in the hiring funnel. For recruiters, reading through hundreds of resumes is exhausting and prone to bias. For technical managers, conducting initial phone screens is a massive sink of engineering hours. Today, we are presenting our AI-Powered Talent Acquisition Platform. This isn't just another keyword scanner. We have built an end-to-end intelligent agent that parses candidate profiles semantically, matches them to roles using hybrid vector search, and conducts an interactive, voice-enabled technical screening interview evaluated entirely by an LLM.\"", quote_style))
+    # SECTION 2
+    story.append(Paragraph("Section 2: Resume Parsing & Semantic Matching (2 Minutes)", h1_style))
+    story.append(Paragraph("<b>[ACTION]:</b> Partner uploads a PDF resume and clicks \"Process & Match Roles\".", action_style))
+    story.append(Paragraph("<b>[WHAT YOU SAY]:</b>", body_style))
+    story.append(Paragraph("\"Now, my partner has uploaded a PDF resume. In the backend, our application reads the PDF binary and extracts the raw text. To extract structured information such as the candidate's name, email, phone, location, and key skills, we utilize a library called <b>Instructor</b>. Instructor wraps around our LLM API queries, forcing the LLM to structure its output according to a strict <b>Pydantic schema</b>. This ensures we get clean, reliable JSON data without any parser errors.\"", spoken_style))
+    story.append(Paragraph("\"Once skills are extracted, the system calculates semantic matching. Instead of checking if exact words are present, we convert the candidate's resume profile and our database job roles into high-dimensional vector embeddings using a BERT-based transformer model. We run a <b>Cosine Similarity</b> calculation between the candidate's embedding and the job role embeddings. The app then ranks the jobs and displays the Top 5 recommended roles with their match percentages. My partner will select the Python Developer role and apply.\"", spoken_style))
     story.append(Spacer(1, 5))
     
-    # Section 2
-    story.append(Paragraph("Part 2: Technical Innovations - 2 Minutes", h1_style))
-    story.append(Paragraph("<b>1. Semantic Matching over Keywords</b>: Instead of simple text-matching, we load candidate resumes and job roles as high-dimensional BERT embeddings, calculating semantic similarity to rank candidates on their actual skills, not just buzzwords.", bullet_style))
-    story.append(Paragraph("<b>2. Real-Time Voice Compression Pipeline</b>: When the candidate speaks, their voice is captured as WAV, downsampled to 16,000Hz, compressed into an MP3 file using `lameenc` (reducing file size by over 80%), and stored as a lightweight Base64 string in MongoDB. This keeps database storage clean and minimal.", bullet_style))
-    story.append(Paragraph("<b>3. High-Availability Fallback Design</b>: If our network connection drops or the LLM server is unreachable, our interview module cycles through a rotating queue of 5 distinct professional questions to protect the candidate's user experience.", bullet_style))
+    # SECTION 3
+    story.append(Paragraph("Section 3: The AI Technical Interview & Voice Pipeline (3 Minutes)", h1_style))
+    story.append(Paragraph("<b>[ACTION]:</b> Partner clicks \"Apply & Start Interview\". A question appears. Partner clicks \"Start Recording\", answers the question, clicks \"Stop & Transcribe\", then clicks \"Submit Answer\". Repeat for one or two questions.", action_style))
+    story.append(Paragraph("<b>[WHAT YOU SAY]:</b>", body_style))
+    story.append(Paragraph("\"Once the candidate applies, the system initializes a new document in MongoDB and generates the first interview question. To ensure the interview is rigorous, the LLM generates 5 dynamic questions customized to the job role. The candidate can read the question and click record. When the candidate stops recording, the app transcribes their response in real-time using the Google Speech-to-Text API.\"", spoken_style))
+    story.append(Paragraph("\"Under the hood, we solved a major database engineering problem regarding voice storage. Storing raw WAV recordings would quickly exhaust our database storage. To resolve this, our backend downsamples the audio and compresses it into the <b>MP3 format</b> in real-time using LAME encoder bindings (<b>lameenc</b>). This reduces our audio files by over 80%, from 15MB down to less than 400KB. The compressed MP3 binary is then encoded into a <b>Base64 string</b> and stored directly inside the candidate's MongoDB document. This stateless database design allows us to easily scale the web servers.\"", spoken_style))
+    story.append(Paragraph("\"Furthermore, we have engineered a high-availability fallback. If the LLM server goes offline or has connection issues during the interview, the app automatically switches to a pre-defined queue of 5 distinct, role-specific professional questions. This ensures the candidate has a smooth, uninterrupted interview even in network failures.\"", spoken_style))
+    story.append(PageBreak()) # Clean break to keep PDF organized
+    
+    # SECTION 4 (NEW SECTION FOR PORT 8501 PREFERENCES FLOW)
+    story.append(Paragraph("Section 4: Job Preferences & AI Evaluation Generation (3 Minutes)", h1_style))
+    story.append(Paragraph("<b>[ACTION]:</b> After the 5th question is answered, the screen changes. Partner fills out the Job Preferences form (Expected Salary, Work Mode, Relocation choice, and Current Location) and clicks \"Submit Application & Generate Report\". Wait for the evaluation to load on screen.", action_style))
+    story.append(Paragraph("<b>[WHAT YOU SAY]:</b>", body_style))
+    story.append(Paragraph("\"After the candidate answers all five questions, they are directed to the final Candidate Preferences page. Here, they input operational preferences such as their target salary expectations, relocation availability, and preferred working model—whether they prefer Remote, Hybrid, or On-Site work. Simultaneously, we fetch browser coordinates using the streamlit-geolocation package, resolving them to an address via OpenStreetMap's Nominatim API, with a backup IP Geolocation fallback to ensure the user's location is recorded automatically.\"", spoken_style))
+    story.append(Paragraph("\"When the candidate clicks 'Submit Application & Generate Report', the candidate portal triggers our background evaluator. The app compiles the candidate's resume text, job preferences, and the full Q&A transcript into an evaluation prompt. This prompt is dispatched to our remote LLM server with a robust 90-second query timeout to guarantee generation completeness. The LLM reads the transcript, assesses candidate skills and communication, and generates a structured AI scorecard. As you can see on the candidate's screen, they are immediately shown a success confirmation along with their communication score, soft skills review, and system hiring recommendation. Let us now examine how this looks in the recruiter's system.\"", spoken_style))
     story.append(Spacer(1, 5))
     
-    # Section 3
-    story.append(Paragraph("Part 3: Live Demo Script (Step-by-Step) - 4 Minutes", h1_style))
-    
-    # Live Demo Table Data
-    table_data = [
-        [
-            Paragraph("Phase & Screen", table_header_style),
-            Paragraph("Action to Perform", table_header_style),
-            Paragraph("Word-for-Word Spoken Script", table_header_style)
-        ],
-        [
-            Paragraph("<b>1. Home Screen</b>", table_body_style),
-            Paragraph("Open localhost:8501. Upload a resume PDF. Click 'Process & Match'.", table_body_style),
-            Paragraph("<i>'We begin at the Candidate Portal. I will upload this backend developer resume. In the background, our parser extracts clean text and matches it against our job database using BERT embeddings to recommend matched roles.'</i>", table_body_style)
-        ],
-        [
-            Paragraph("<b>2. Job Matching</b>", table_body_style),
-            Paragraph("Scroll through recommendations. Select Python Developer and click Apply.", table_body_style),
-            Paragraph("<i>'The candidate is presented with their parsed skills and the top 5 recommended roles. I will select the Python Developer role. The system instantly initializes a MongoDB record and generates our first question.'</i>", table_body_style)
-        ],
-        [
-            Paragraph("<b>3. The Interview</b>", table_body_style),
-            Paragraph("Click 'Start Recording', speak a 15-sec answer, click 'Stop & Transcribe', then click Submit.", table_body_style),
-            Paragraph("<i>'The AI asks a question. I will record my answer. The app uses Google Speech-to-Text to transcribe my voice. Under the hood, this audio is compressed to MP3 and stored as a base64 string in MongoDB.'</i>", table_body_style)
-        ],
-        [
-            Paragraph("<b>4. Preferences</b>", table_body_style),
-            Paragraph("Fill out the salary, relocation, and work preference fields. Click Submit.", table_body_style),
-            Paragraph("<i>'At the final step, the candidate inputs their job preferences. The app triggers our LLM evaluator, which grades the full transcript, assesses technical depth, soft skills, and provides a structured scorecard.'</i>", table_body_style)
-        ],
-        [
-            Paragraph("<b>5. Recruiter View</b>", table_body_style),
-            Paragraph("Open localhost:8502. Select candidate. Play candidate recorded audio.", table_body_style),
-            Paragraph("<i>'Now, let's step into the recruiter dashboard. Selecting our candidate displays the detailed AI scorecard. Crucially, I can review the transcript and play the candidate's exact voice answer directly from this browser.'</i>", table_body_style)
-        ]
-    ]
-    
-    col_widths = [80, 140, 284]
-    demo_table = Table(table_data, colWidths=col_widths, repeatRows=1)
-    demo_table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#4f46e5')),
-        ('ALIGN', (0,0), (-1,-1), 'LEFT'),
-        ('VALIGN', (0,0), (-1,-1), 'TOP'),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
-        ('TOPPADDING', (0,0), (-1,-1), 6),
-        ('LEFTPADDING', (0,0), (-1,-1), 5),
-        ('RIGHTPADDING', (0,0), (-1,-1), 5),
-        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.HexColor('#f8fafc'), colors.white]),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
-    ]))
-    
-    story.append(demo_table)
+    # SECTION 5
+    story.append(Paragraph("Section 5: Recruiter Dashboard & Analytics (3 Minutes)", h1_style))
+    story.append(Paragraph("<b>[ACTION]:</b> Switch browser tab to the Recruiter Dashboard at <u>http://localhost:8502</u>. Expand the \"Recruitment Analytics & Insights\" tab, select the candidate you just created, scroll through their scorecard, and click the play button on their audio answer. Finally, click \"Export Candidate Report (TXT)\".", action_style))
+    story.append(Paragraph("<b>[WHAT YOU SAY]:</b>", body_style))
+    story.append(Paragraph("\"Let's switch over to the recruiter's perspective, running on port 8502. When a recruiter logs in, they are greeted by an analytics suite. The dashboard displays native Streamlit charts plotting application counts by job role and experience distributions, giving recruiters immediate high-level hiring insight. We can sort and filter candidates easily.\"", spoken_style))
+    story.append(Paragraph("\"Let's look at the candidate we just created. On the right, the detailed panel displays their contact details and their <b>AI Scorecard</b>. This scorecard is compiled at the end of the candidate application, where our LLM reads the entire interview transcript, evaluates technical depth and communication clarity, compiles summaries of strengths and gaps, and returns a system recommendation.\"", spoken_style))
+    story.append(Paragraph("\"Recruiters can review each question and answer transcript. Most importantly, the recruiter can click the play button and **listen to the candidate's actual voice recording** directly in the browser! The app pulls the Base64 string from MongoDB, decodes it back to MP3 bytes on-the-fly, and feeds it to the audio player. The recruiter can write notes, update the status, and download a clean copy of the entire scorecard using the Export button.\"", spoken_style))
     story.append(Spacer(1, 5))
     
-    # Section 4
-    story.append(Paragraph("Part 4: Expert Q&A Defense Strategy", h1_style))
-    story.append(Paragraph("<b>Q: Why separate the candidate portal and admin portal into two apps?</b>", body_style))
-    story.append(Paragraph("<i>Answer: Security and separation of concerns. Candidates should never have access to recruitment analytics, scorecards, or others' transcripts. By running them on different ports (8501 and 8502), we can apply different firewall rules and deploy them independently.</i>", quote_style))
-    story.append(Spacer(1, 4))
+    # SECTION 6
+    story.append(Paragraph("Section 6: Security Architecture & Closing (2 Minutes)", h1_style))
+    story.append(Paragraph("<b>[ACTION]:</b> Keep the recruiter dashboard visible, showing the clean design.", action_style))
+    story.append(Paragraph("<b>[WHAT YOU SAY]:</b>", body_style))
+    story.append(Paragraph("\"To conclude, we would like to highlight our security architecture. Instead of running a single Streamlit app, we split the system into two isolated services. The candidate portal on port 8501 has no access to evaluation details or recruiter notes. The recruiter portal on port 8502 is restricted. This isolated design is secure, production-ready, and guarantees data privacy.\"", spoken_style))
+    story.append(Paragraph("\"To summarize, we have built a semantic resume parser, a real-time MP3 audio compression pipeline, an interactive voice-enabled AI technical screener, and a detailed recruitment dashboard. Thank you, and we are now open to any questions from the panel.\"", spoken_style))
+    story.append(Spacer(1, 5))
     
-    story.append(Paragraph("<b>Q: Why store audio as Base64 in MongoDB instead of saving files to a folder?</b>", body_style))
-    story.append(Paragraph("<i>Answer: It makes the server completely stateless. Storing base64 MP3 strings directly in the database means any server instance can retrieve and play candidate audio instantly without sharing local filesystems, making backup and scaling simple.</i>", quote_style))
-    story.append(Spacer(1, 4))
-    
-    story.append(Paragraph("<b>Q: Why did you choose Google Speech-to-Text?</b>", body_style))
-    story.append(Paragraph("<i>Answer: Google's STT API is highly performant, requires zero local machine resources to run, handles background noise well, and has extremely low transcription latency.</i>", quote_style))
+    # PANEL Q&A CHEAT SHEET
+    story.append(Paragraph("Expert Panel Q&A Cheat Sheet", h1_style))
+    story.append(Paragraph("<b>Q1: Why did the candidate match score show 0.0% in your initial tests?</b><br/><i>Answer:</i> The evaluation prompt is highly complex and requires generating a detailed scorecard. Our initial HTTP request had a short 10-second timeout. On a remote LLM server, this complex query took longer than 10 seconds, triggering a ReadTimeout. We increased the query timeout to 90 seconds, which resolved the issue and now generates evaluations successfully.", bullet_style))
+    story.append(Paragraph("<b>Q2: What happens if Nominatim reverse-geocoding fails during candidate registration?</b><br/><i>Answer:</i> We implemented an automatic fallback to an IP Geolocation API (ip-api.com). If both fail, it falls back to a manual text field, ensuring candidate signup never blocks.", bullet_style))
+    story.append(Paragraph("<b>Q3: What are the security benefits of separating candidate and recruiter portals into two ports?</b><br/><i>Answer:</i> Running them as separate apps ensures that candidate-facing code never contains recruiter logic. Even if a candidate is skilled at web inspection, they cannot bypass security layers or find routes to recruiter panels as they run on completely separate servers.", bullet_style))
     
     # Build PDF
     doc.build(story)
-    print("Enhanced PDF Successfully Generated.")
+    print("Enhanced Masterclass PDF Successfully Generated.")
 
 if __name__ == '__main__':
     pdf_path = "presentation_script.pdf"
