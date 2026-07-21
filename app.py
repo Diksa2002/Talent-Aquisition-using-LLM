@@ -259,7 +259,7 @@ if st.session_state.nav_page == "Upload Resume":
             if not resume_text:
                 st.error("Failed to extract text from the PDF. Please try another PDF.")
             else:
-                profile = parser.parse_resume(resume_text)
+                profile = parser.parse_resume_text_with_llm(resume_text)
                 st.session_state.resume_text = resume_text
                 st.session_state.candidate_profile = profile
 
