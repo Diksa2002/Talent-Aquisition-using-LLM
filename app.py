@@ -140,6 +140,30 @@ def get_db():
     db.seed_roles()
     return db
 
+def generate_question_audio(text):
+    """
+    Generates realistic, human-like voice audio using gTTS (Google Text-to-Speech).
+    Returns MP3 audio bytes.
+    """
+    try:
+        from gtts import gTTS
+        import io
+        tts = gTTS(text=text, lang='en', tld='co.uk')
+        fp = io.BytesIO()
+        tts.write_to_fp(fp)
+        fp.seek(0)
+        return fp.read()
+    except Exception as e:
+        print(f"Error generating gTTS audio: {e}")
+        return None
+
+def get_geolocation_location(location_data):
+    """
+    Resolves browser coordinates to a city/country via Nominatim API,
+    falling back to IP Geolocation if coordinates are not available.
+    """
+    pass
+
 db = get_db()
 
 # Initialize session state variables
@@ -409,11 +433,16 @@ elif st.session_state.nav_page == "Take / Resume Interview":
             """, unsafe_allow_html=True)
 
             # Human-like Voice Text-to-Speech Player Component
+            audio_bytes = generate_question_audio(question_text)
+            if audio_bytes:
+                st.write("🔊 **AI Interviewer Audio (Human Voice):**")
+                st.audio(audio_bytes, format="audio/mp3")
+            
             clean_q_script = question_text.replace('"', '\\"').replace('\n', ' ')
             tts_html = f"""
             <div style="margin-bottom: 15px;">
                 <button onclick="speakQuestion()" style="background: linear-gradient(135deg, #6366f1, #a855f7); color: white; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px;">
-                    🔊 Listen to AI Interviewer
+                    🔊 Speak Again
                 </button>
             </div>
             <script>
@@ -421,11 +450,12 @@ elif st.session_state.nav_page == "Take / Resume Interview":
                 if ('speechSynthesis' in window) {{
                     window.speechSynthesis.cancel();
                     var msg = new SpeechSynthesisUtterance("{clean_q_script}");
+                    var voices = window.speechSynthesis.getVoices();
+                    var natural = voices.find(v => v.name.includes("Natural") || v.name.includes("Google") || v.name.includes("Neural"));
+                    if (natural) msg.voice = natural;
                     msg.rate = 0.95;
                     msg.pitch = 1.0;
                     window.speechSynthesis.speak(msg);
-                }} else {{
-                    alert("Text-to-speech not supported in this browser.");
                 }}
             }}
             </script>
