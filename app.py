@@ -142,8 +142,29 @@ def get_db():
 
 def text_to_speech_gtts(text):
     """
-    Makes a request to the gTTS service and returns the generated MP3 audio bytes.
+    Generates ultra-realistic, human-like neural voice MP3 audio using Microsoft Azure Neural TTS (edge-tts).
+    Falls back gracefully to gTTS if edge-tts is unavailable.
     """
+    import asyncio
+    try:
+        import edge_tts
+        async def _async_generate():
+            communicate = edge_tts.Communicate(text, "en-US-AriaNeural")
+            audio_data = b""
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    audio_data += chunk["data"]
+            return audio_data
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        audio_bytes = loop.run_until_complete(_async_generate())
+        loop.close()
+        if audio_bytes:
+            return audio_bytes
+    except Exception as e:
+        print(f"Error in edge-tts neural voice generation: {e}")
+
     try:
         from gtts import gTTS
         import io
@@ -153,7 +174,7 @@ def text_to_speech_gtts(text):
         fp.seek(0)
         return fp.read()
     except Exception as e:
-        print(f"Error generating gTTS audio: {e}")
+        print(f"Error generating fallback gTTS audio: {e}")
         return None
 
 def get_geolocation_location(location_data):
